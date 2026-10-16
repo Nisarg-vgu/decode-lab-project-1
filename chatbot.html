@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Rule-Based Chatbot // White Box Engine</title>
+<style>
+  :root{
+    --bg:#0d1210;
+    --panel:#121a17;
+    --line:#24332c;
+    --text:#d7e4dd;
+    --dim:#5f7a6d;
+    --accent:#7ce0a8;
+    --accent-dim:#3a5c48;
+    --user-bubble:#1c2b24;
+    --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(circle at 50% -10%, #16241d 0%, var(--bg) 55%);
+    color:var(--text);
+    font-family: var(--mono);
+    display:flex;
+    flex-direction:column;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  header{
+    padding:14px 16px 10px;
+    border-bottom:1px solid var(--line);
+    flex-shrink:0;
+  }
+  .header-row{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:8px;
+  }
+  .title{
+    font-size:14px;
+    letter-spacing:0.5px;
+    color:var(--accent);
+    font-weight:600;
+  }
+  .status{
+    font-size:11px;
+    color:var(--dim);
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .dot{
+    width:6px;height:6px;border-radius:50%;
+    background:var(--accent);
+    box-shadow:0 0 6px var(--accent);
+  }
+  .subtitle{
+    margin-top:4px;
+    font-size:10.5px;
+    color:var(--dim);
+    letter-spacing:0.3px;
+  }
+
+  #chat{
+    flex:1;
+    overflow-y:auto;
+    padding:16px 12px 8px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+
+  .row{ display:flex; flex-direction:column; max-width:88%; }
+  .row.user{ align-self:flex-end; align-items:flex-end; }
+  .row.bot{ align-self:flex-start; align-items:flex-start; }
+
+  .bubble{
+    padding:9px 12px;
+    border-radius:3px;
+    font-size:13.5px;
+    line-height:1.45;
+    white-space:pre-wrap;
+    word-break:break-word;
+  }
+  .row.user .bubble{
+    background:var(--user-bubble);
+    border:1px solid var(--line);
+    color:var(--text);
+  }
+  .row.bot .bubble{
+    background:var(--panel);
+    border:1px solid var(--accent-dim);
+    color:var(--text);
+  }
+  .trace{
+    margin-top:3px;
+    font-size:9.5px;
+    color:var(--dim);
+    letter-spacing:0.2px;
+    padding-left:2px;
+  }
+  .trace .key{ color:var(--accent); }
+
+  #inputBar{
+    flex-shrink:0;
+    display:flex;
+    gap:8px;
+    padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+    border-top:1px solid var(--line);
+    background:var(--bg);
+  }
+  #inputField{
+    flex:1;
+    background:var(--panel);
+    border:1px solid var(--line);
+    color:var(--text);
+    border-radius:3px;
+    padding:11px 12px;
+    font-family:var(--mono);
+    font-size:14px;
+    outline:none;
+  }
+  #inputField:focus{
+    border-color:var(--accent-dim);
+  }
+  #sendBtn{
+    background:var(--accent);
+    color:#0d1210;
+    border:none;
+    border-radius:3px;
+    padding:0 16px;
+    font-family:var(--mono);
+    font-weight:700;
+    font-size:13px;
+    letter-spacing:0.3px;
+    cursor:pointer;
+  }
+  #sendBtn:active{ transform: scale(0.97); }
+
+  .hint-row{
+    display:flex;
+    gap:6px;
+    overflow-x:auto;
+    padding:0 12px 10px;
+    flex-shrink:0;
+  }
+  .hint{
+    flex-shrink:0;
+    border:1px solid var(--line);
+    color:var(--dim);
+    background:transparent;
+    font-family:var(--mono);
+    font-size:11px;
+    padding:5px 9px;
+    border-radius:20px;
+    cursor:pointer;
+  }
+  .hint:active{ border-color:var(--accent-dim); color:var(--accent); }
+
+  ::-webkit-scrollbar{ width:4px; }
+  ::-webkit-scrollbar-thumb{ background:var(--line); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-row">
+    <div class="title">RULE_ENGINE_v1</div>
+    <div class="status"><span class="dot"></span>DETERMINISTIC</div>
+  </div>
+  <div class="subtitle">dict.get() lookup · O(1) · zero hallucination</div>
+</header>
+
+<div id="chat"></div>
+
+<div class="hint-row" id="hintRow"></div>
+
+<div id="inputBar">
+  <input id="inputField" type="text" placeholder="type a message..." autocomplete="off" />
+  <button id="sendBtn">SEND</button>
+</div>
+
+<script>
+// ------------------------------------------------------------------
+// KNOWLEDGE BASE (Hash Map) — identical logic to rule_based_chatbot.py
+// ------------------------------------------------------------------
+const KNOWLEDGE_BASE = {
+  "hello": "Hi there! How can I help you today?",
+  "hi": "Hello! What can I do for you?",
+  "hey": "Hey! What's up?",
+  "good morning": "Good morning! Hope you have a great day ahead.",
+  "good afternoon": "Good afternoon! How can I help?",
+  "good evening": "Good evening! What can I do for you?",
+  "good night": "Good night! Sleep well.",
+
+  "how are you": "I'm a program, so I don't have feelings, but I'm running fine! How about you?",
+  "how are you doing": "Doing well, thanks for asking! How about you?",
+  "i am fine": "That's great to hear!",
+  "i am good": "Glad to hear that!",
+  "i am not good": "I'm sorry to hear that. I hope things get better soon.",
+  "i am not fine": "I'm sorry to hear that. I hope things get better soon.",
+  "what are you doing": "I'm just here, waiting to chat with you!",
+  "what's up": "Not much, just running as a script! What's up with you?",
+  "nice to meet you": "Nice to meet you too!",
+
+  "what is your name": "I am a Rule-Based AI Chatbot built in Python (and running here in JavaScript).",
+  "who are you": "I'm a simple rule-based chatbot created for an industrial training project.",
+  "who created you": "I was created by a developer as part of a Python industrial training project.",
+  "what can you do": "I can chat with you using predefined rules and answer basic questions.",
+  "are you a robot": "I'm a chatbot program, not a physical robot!",
+  "are you human": "No, I'm an AI chatbot, not a human.",
+
+  "help": "Try things like: hello, how are you, what is your name, thank you, bye.",
+  "what can i ask you": "You can try greetings like 'hi', questions like 'what is your name', or just say 'bye'.",
+
+  "thank you": "You're welcome!",
+  "thanks": "You're welcome!",
+  "thanks a lot": "You're very welcome!",
+  "appreciate it": "No problem at all, happy to help!",
+
+  "sorry": "No worries at all!",
+  "my apologies": "It's totally fine, no need to apologize.",
+
+  "bye": "Goodbye! Have a great day.",
+  "see you later": "See you later! Take care.",
+  "goodbye": "Goodbye! It was nice chatting with you.",
+  "take care": "You too! Take care.",
+
+  "yes": "Got it!",
+  "no": "Okay, understood.",
+  "ok": "Alright!",
+  "okay": "Alright!",
+  "sure": "Great!",
+
+  "what is the weather today": "I don't have live weather access, but I hope it's sunny where you are!",
+  "do you like music": "I don't have preferences, but I can tell you music is a popular topic!"
+};
+
+const FALLBACK_RESPONSE = "I do not understand. Type 'help' to see what I can respond to.";
+const FALLBACK_KEY = "fallback";
+
+// 2. SANITIZATION & NORMALIZATION — mirrors .lower().strip()
+function normalizeInput(raw) {
+  return raw.toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+// 4. ATOMIC OPERATION — mirrors dict.get(key, default)
+// Returns both the matched key (for the trace line) and the response,
+// so the UI can show exactly which rule fired — same "white box"
+// traceability as the Python version's dict.get() call.
+function getResponse(userInput) {
+  if (Object.prototype.hasOwnProperty.call(KNOWLEDGE_BASE, userInput)) {
+    return { key: userInput, text: KNOWLEDGE_BASE[userInput] };
+  }
+  return { key: FALLBACK_KEY, text: FALLBACK_RESPONSE };
+}
+
+// ------------------------------------------------------------------
+// UI wiring
+// ------------------------------------------------------------------
+const chat = document.getElementById("chat");
+const inputField = document.getElementById("inputField");
+const sendBtn = document.getElementById("sendBtn");
+const hintRow = document.getElementById("hintRow");
+
+function addRow(role, text, traceKey) {
+  const row = document.createElement("div");
+  row.className = "row " + role;
+
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+  bubble.textContent = text;
+  row.appendChild(bubble);
+
+  if (role === "bot") {
+    const trace = document.createElement("div");
+    trace.className = "trace";
+    trace.innerHTML = 'matched key: <span class="key">"' + traceKey + '"</span>';
+    row.appendChild(trace);
+  }
+
+  chat.appendChild(row);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function handleSend() {
+  const raw = inputField.value;
+  if (!raw.trim()) return;
+
+  addRow("user", raw);
+  inputField.value = "";
+
+  const cleaned = normalizeInput(raw);
+  const { key, text } = getResponse(cleaned);
+
+  // tiny delay so it doesn't feel instantaneous/robotic
+  setTimeout(() => addRow("bot", text, key), 180);
+}
+
+sendBtn.addEventListener("click", handleSend);
+inputField.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") handleSend();
+});
+
+// Suggestion chips for quick mobile testing
+const hints = ["hello", "how are you", "what is your name", "help", "thank you", "bye"];
+hints.forEach(h => {
+  const btn = document.createElement("button");
+  btn.className = "hint";
+  btn.textContent = h;
+  btn.addEventListener("click", () => {
+    inputField.value = h;
+    handleSend();
+  });
+  hintRow.appendChild(btn);
+});
+
+// Greeting on load
+addRow("bot", "Rule-based engine online. Type a message or tap a suggestion below.", "system_boot");
+</script>
+</body>
+</html>
